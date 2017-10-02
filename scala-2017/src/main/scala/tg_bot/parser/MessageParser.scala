@@ -27,6 +27,8 @@ class MessageParser extends RegexParsers {
 
   val clearLists: Parser[UserMessage] = "[Cc]lear lists".r ^^ { _ => ClearLists }
 
+  val start: Parser[UserMessage] = "/start".r ^^ { _ => Start}
+
   val showList: Parser[ShowList] =
     "[Ss]how list".r ~> nameParser ^^ {
       listName => ShowList(listName)
@@ -43,7 +45,7 @@ class MessageParser extends RegexParsers {
     }
 
   val userMessage: Parser[UserMessage] =
-    addList | addCost | getLists | showList | sayBudget | changeBudget | clearLists
+    addList | addCost | getLists | showList | sayBudget | changeBudget | clearLists | start
 }
 
 object MessageParser extends MessageParser {

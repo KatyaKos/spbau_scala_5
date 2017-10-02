@@ -9,15 +9,12 @@ class CostsBotActor extends PersistentActor {
 
   import CostsBotActor._
 
-  val lists: mutable.HashMap[Long, (String, Double)] = mutable.HashMap.empty
-
   val database: mutable.HashMap[Long, mutable.HashMap[String, CostsList]] = mutable.HashMap.empty
 
   def receiveEvent(event: Event): Unit = {
     event match {
       case NewList(id, name, budget) =>
-        lists(id) = (name, budget)
-        database(id)(name) = new CostsList(name, budget)
+        database.getOrElseUpdate(id, mutable.HashMap.empty)(name) = new CostsList(name, budget)
       case NewCost(id, costName, price, listName) =>
         database.getOrElseUpdate(id, mutable.HashMap.empty)(listName)
           .addCost(costName, price)
@@ -35,7 +32,7 @@ class CostsBotActor extends PersistentActor {
   override def receiveCommand: Receive = {
     case evt: Event => persist(evt)(receiveEvent)
     case GetLists(id) =>
-      sender ! lists.values
+      sender ! database.getOrElseUpdate(id, mutable.HashMap.empty)
     case GetList(id, name) =>
       val userLists = database.getOrElseUpdate(id, mutable.HashMap.empty)
       sender ! (if (userLists.contains(name)) Some(userLists(name).printList()) else None)
@@ -43,11 +40,10 @@ class CostsBotActor extends PersistentActor {
       val userLists = database.getOrElseUpdate(id, mutable.HashMap.empty)
       sender ! (if (userLists.contains(name)) Some(userLists(name).getBudget()) else None)
     case RemoveLists(id) =>
-      lists.clear()
       database.clear()
   }
 
-  override def persistenceId = "costs-bot-database"
+  override def persistenceId = "koshchenko-costs-bot-database"
 }
 
 object CostsBotActor {
@@ -58,9 +54,9 @@ object CostsBotActor {
 
   case class NewCost(id: Long, costName: String, price: Double, listName: String) extends Event
 
-  case class GetList(id: Long, listName: String) extends Event
+  case class GetList(id: Long, listName: String)
 
-  case class GetBudget(id: Long, listName: String) extends Event
+  case class GetBudget(id: Long, listName: String)
 
   case class SetBudget(id: Long, listName: String, budget: Double) extends Event
 

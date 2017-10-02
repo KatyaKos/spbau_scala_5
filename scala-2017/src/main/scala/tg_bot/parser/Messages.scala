@@ -16,4 +16,6 @@ case object ShowLists extends UserMessage
 
 case object ClearLists extends UserMessage
 
+case object Start extends UserMessage
+
 case object WrongMessage extends UserMessage

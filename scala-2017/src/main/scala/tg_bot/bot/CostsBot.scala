@@ -6,8 +6,10 @@ import akka.util.Timeout
 import info.mukel.telegrambot4s.api.declarative.Commands
 import info.mukel.telegrambot4s.api.{Polling, TelegramBot}
 import tg_bot.database.CostsBotActor._
+import tg_bot.database.structures.CostsList
 import tg_bot.parser._
 
+import scala.collection.mutable
 import scala.concurrent.duration.DurationInt
 import scala.util.Success
 
@@ -16,7 +18,7 @@ class CostsBot(val token: String,
   onMessage {
     implicit message =>
       message.text.foreach { text =>
-        implicit val timeout: Timeout = Timeout(1.second)
+        implicit val timeout: Timeout = Timeout(5.second)
         val chatId = message.chat.id
         MessageParser.parse(text) match {
           case AddList(listName, budget) =>
@@ -52,10 +54,10 @@ class CostsBot(val token: String,
             }
           case ShowLists =>
             (database ? GetLists(chatId)).onComplete {
-              case Success(list: Iterable[(String, Double)]) =>
+              case Success(map: mutable.HashMap[String, CostsList]) =>
                 var result: String = "Your lists:\n"
-                for ((name, budget) <- list) {
-                  result += "Name: " + name + ", Budget: " + budget + "\n"
+                for (list: CostsList <- map.values) {
+                  result += "Name: " + list.listName + ", Budget: " + list.budget + "\n"
                 }
                 reply(result)
               case _ =>
@@ -71,6 +73,15 @@ class CostsBot(val token: String,
           case ClearLists =>
             database ! RemoveLists(chatId)
             reply("Lists removed.")
+          case Start =>
+            reply("Commands:\n" +
+              "Add list LIST_NAME with budget N\n" +
+              "Add cost COST_NAME with price N to list LIST_NAME\n" +
+              "My lists\n" +
+              "Clear lists\n" +
+              "Show list LIST_NAME\n" +
+              "Say budget of LIST_NAME\n" +
+              "Change budget of LIST_NAME to N\n")
           case WrongMessage =>
               reply("No such command")
           }
