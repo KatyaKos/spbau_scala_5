@@ -5,74 +5,107 @@ import akka.pattern.ask
 import akka.util.Timeout
 import info.mukel.telegrambot4s.api.declarative.Commands
 import info.mukel.telegrambot4s.api.{Polling, TelegramBot}
+import info.mukel.telegrambot4s.models.Message
 import tg_bot.database.CostsBotActor._
 import tg_bot.database.structures.CostsList
 import tg_bot.parser._
 
-import scala.collection.mutable
+import scala.concurrent.{Await, Future}
 import scala.concurrent.duration.DurationInt
 import scala.util.Success
 
 class CostsBot(val token: String,
                    val database: ActorRef) extends TelegramBot with Polling with Commands {
+
+  private def listEffectingFunc(listName: String,
+                                successFunc: String => Unit)
+                               (implicit message: Message) = {
+    (database ? GetList(message.chat.id, listName)).onComplete {
+      case Success(Some(listText: String)) =>
+        successFunc(listText)
+      case _ =>
+        reply("Such list doesn't exist.")(message)
+    }
+  }
+
+  private def addList(listName: String, budget: Double)(implicit message: Message) = {
+    (database ? GetList(message.chat.id, listName)).onComplete {
+      case Success(Some(listText: String)) =>
+        reply("Such list already exists!")(message)
+      case _ =>
+        Await.ready(Future(database ! NewList(message.chat.id, listName, budget)), 10.seconds)
+        reply("List is ready to use.")(message)
+    }
+  }
+
+  private def addCost(costName:String, price: Double, listName: String)(implicit message: Message) = {
+    val success: String => Unit = _ => (
+      database ! NewCost(message.chat.id, costName, price, listName),
+      reply("Cost added.")(message)
+      )
+    listEffectingFunc(listName, success)
+  }
+
+  private def changeBudget(listName: String, budget: Double)(implicit message: Message) = {
+    val success: String => Unit = _ => (
+      database ! SetBudget(message.chat.id, listName, budget),
+      reply("Budget changed.")(message)
+      )
+    listEffectingFunc(listName, success)
+  }
+
+  private def showList(listName: String)(implicit message: Message) = {
+    val success: String => Unit = listText => reply(listText)(message)
+    listEffectingFunc(listName, success)
+  }
+
+  private def showLists()(implicit message: Message) = {
+    (database ? GetLists(message.chat.id)).onComplete {
+      case Success(iterable: Iterable[CostsList]) =>
+        var result: String = "Your lists:\n"
+        for (list: CostsList <- iterable) {
+          result += "Name: " + list.listName + ", Budget: " + list.budget + "\n"
+        }
+        reply(result)(message)
+      case _ =>
+        reply("DatabaseError")(message)
+    }
+  }
+
+  private def sayBudget(listName: String)(implicit message: Message) = {
+    (database ? GetBudget(message.chat.id, listName)).onComplete {
+      case Success(Some(budgetText: String)) =>
+        reply(budgetText)(message)
+      case _ =>
+        reply("Such list doesn't exist.")(message)
+    }
+  }
+
+  private def clearLists()(implicit message: Message) = {
+    database ! RemoveLists(message.chat.id)
+    reply("Lists removed.")(message)
+  }
+
+  private implicit val timeout: Timeout = Timeout(5.second)
+
   onMessage {
     implicit message =>
       message.text.foreach { text =>
-        implicit val timeout: Timeout = Timeout(5.second)
-        val chatId = message.chat.id
         MessageParser.parse(text) match {
           case AddList(listName, budget) =>
-            (database ? GetList(chatId, listName)).onComplete {
-              case Success(Some(_)) =>
-                reply("Such list already exists!")
-              case _ =>
-                database ! NewList(chatId, listName, budget)
-                reply("List is ready to use.")
-            }
+            addList(listName, budget)
           case AddCost(costName, price, listName) =>
-            (database ? GetList(chatId, listName)).onComplete {
-              case Success(Some(_)) =>
-                database ! NewCost(chatId, costName, price, listName)
-                reply("Cost added.")
-              case _ =>
-                reply("Such list doesn't exist.")
-            }
+            addCost(costName, price, listName)
           case ChangeBudget(listName, budget) =>
-            (database ? GetList(chatId, listName)).onComplete {
-              case Success(Some(_)) =>
-                database ! SetBudget(chatId, listName, budget)
-                reply("Budget changed.")
-              case _ =>
-                reply("Such list doesn't exist.")
-            }
+            changeBudget(listName, budget)
           case ShowList(listName) =>
-            (database ? GetList(chatId, listName)).onComplete {
-              case Success(Some(listText: String)) =>
-                reply(listText)
-              case _ =>
-                reply("Such list doesn't exist.")
-            }
+            showList(listName)
           case ShowLists =>
-            (database ? GetLists(chatId)).onComplete {
-              case Success(map: mutable.HashMap[String, CostsList]) =>
-                var result: String = "Your lists:\n"
-                for (list: CostsList <- map.values) {
-                  result += "Name: " + list.listName + ", Budget: " + list.budget + "\n"
-                }
-                reply(result)
-              case _ =>
-                reply("DatabaseError")
-            }
+            showLists()
           case SayBudget(listName) =>
-            (database ? GetBudget(chatId, listName)).onComplete {
-              case Success(Some(budgetText: String)) =>
-                reply(budgetText)
-              case _ =>
-                reply("Such list doesn't exist.")
-            }
+            sayBudget(listName)
           case ClearLists =>
-            database ! RemoveLists(chatId)
-            reply("Lists removed.")
+            clearLists()
           case Start =>
             reply("Commands:\n" +
               "Add list LIST_NAME with budget N\n" +

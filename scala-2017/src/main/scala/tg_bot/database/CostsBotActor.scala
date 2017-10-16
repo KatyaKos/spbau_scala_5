@@ -32,7 +32,7 @@ class CostsBotActor extends PersistentActor {
   override def receiveCommand: Receive = {
     case evt: Event => persist(evt)(receiveEvent)
     case GetLists(id) =>
-      sender ! database.getOrElseUpdate(id, mutable.HashMap.empty)
+      sender ! database.getOrElseUpdate(id, mutable.HashMap.empty).values
     case GetList(id, name) =>
       val userLists = database.getOrElseUpdate(id, mutable.HashMap.empty)
       sender ! (if (userLists.contains(name)) Some(userLists(name).printList()) else None)
